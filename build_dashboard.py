@@ -42,13 +42,20 @@ the Collection Report, which showed Dashboard MO overcounting Jul'26 by 5):
   SAME purchase (e.g. wrong plan, device swap) — MACRO keeps both rows as
   status == 'Contract', so there's no Decline/Cancel row to trigger the rule
   above. Collection Report only keeps the reissued (latest) contract; MACRO
-  double-counts both. Rule: group Contract rows by (customer_name, dealer_name);
-  within a group, chain-cluster rows whose contract_date is within 30 days of
-  the previous row in the cluster; for any cluster of 2+, keep only the row with
-  the latest contract_no, drop the rest from Contract/Decline counting (App In
-  still unaffected). Deliberately NOT amount-matched — verified cases include a
-  device-tier change (used -> new phone) where finance_amt differs between the
-  cancelled and reissued contract, so requiring equal amounts would miss it.
+  double-counts both. Rule: group Contract rows by (customer_name, normalized
+  dealer_name, normalized model_name); within a group, chain-cluster rows whose
+  contract_date is within 30 days of the previous row in the cluster; for any
+  cluster of 2+, keep only the row with the latest contract_no, drop the rest
+  from Contract/Decline counting (App In still unaffected).
+  Tightened 2026-08 after the first version wrongly merged two unrelated
+  purchases: dealer_name is punctuation/whitespace-normalized ('เอ.เอ โมบาย'
+  == 'เอ.เอ. โมบาย', a genuine reissue the loose version had MISSED), model_name
+  is required to match after stripping '(USED)' and whitespace (a genuine
+  device-tier reissue like used->new phone changes the string but not the
+  underlying model — this is why the rule is amount-agnostic but NOT
+  model-agnostic), and any customer_name ending in '..' (source-truncated,
+  can collide between different real people) is skipped entirely rather than
+  risk merging two different customers' purchases.
   This is per-dealer (unlike the rule above, which is cross-dealer) because a
   reissue happens at the same showroom that wrote the original contract.
 
@@ -289,6 +296,7 @@ def compute_dedupe_exclusions(rows):
 
 
 REISSUE_WINDOW_DAYS = 30
+_USED_RE = re.compile(r"\(used\)", re.I)
 
 
 def _parse_con_date(ds):
@@ -298,16 +306,46 @@ def _parse_con_date(ds):
         return None
 
 
+def _norm_dealer(name):
+    """Collapse punctuation/whitespace noise so 'เอ.เอ โมบาย' == 'เอ.เอ. โมบาย'."""
+    return re.sub(r"\s+", " ", (name or "").replace(".", "")).strip()
+
+
+def _norm_model(md):
+    """Squash a model name for equality: drop '(USED)' anywhere (case-
+    insensitive) and all whitespace, so '(USED)APPLE iPhone 15 128 GB' ==
+    'APPLE iPhone15 128GB'. Deliberately not amount-matched (see docstring)
+    but IS model-matched, otherwise two different real purchases close in
+    time and at the same dealer (different phone models) would wrongly
+    collapse into one."""
+    s = _USED_RE.sub("", md or "")
+    return re.sub(r"\s+", "", s).lower()
+
+
+def _is_ambiguous_name(name):
+    """Source data sometimes truncates customer_name with a trailing '..'
+    (e.g. 'MR. Khun Tun Lay ..'). Two different people can share that same
+    truncated string, so the reissue rule must never merge rows on a name
+    like this — better to under-dedupe than to silently drop a real sale."""
+    return (name or "").rstrip().endswith("..")
+
+
 def compute_reissue_exclusions(rows):
     """Contract-reissue dedupe (see module docstring).
 
-    Groups Contract rows by (customer_name, dealer_name). Within a group,
+    Groups Contract rows by (customer_name, normalized dealer_name,
+    normalized model_name) — all three must match, not just customer+dealer,
+    otherwise two genuinely different purchases by the same person at the
+    same dealer within the window get wrongly collapsed (found 2026-08:
+    two different customers named '... ..' each bought two different phones
+    days apart and were incorrectly merged before this fix). Names ending in
+    '..' are skipped entirely (see _is_ambiguous_name). Within a group,
     sorts by contract_date and chain-clusters rows that are within
     REISSUE_WINDOW_DAYS of the previous row in the running cluster (so A, B,
     C at day 0/25/50 all cluster together even though A-C is 50 days apart).
     For any cluster of 2+ rows, keeps only the highest contract_no and
     excludes the rest. Not amount-matched on purpose — a reissue can change
-    the financed amount (e.g. used -> new device).
+    the financed amount (e.g. used -> new device) but keeps the same model.
     """
     bygrp = defaultdict(list)
     for rec in rows:
@@ -316,10 +354,13 @@ def compute_reissue_exclusions(rows):
         name, dlr = rec.get("cust"), rec.get("dlr")
         if not name or not dlr:
             continue
+        if _is_ambiguous_name(name):
+            continue
         d = _parse_con_date(rec.get("con_date"))
         if d is None:
             continue
-        bygrp[(name, dlr)].append((d, rec))
+        key = (name, _norm_dealer(dlr), _norm_model(rec.get("md")))
+        bygrp[key].append((d, rec))
 
     def conno_key(r):
         c = r.get("conno") or ""
