@@ -36,6 +36,22 @@ Repeat-customer dedupe rule (added 2026-08, per Puis):
   exactly as before. This is a customer-identity dedupe (by full name, across all
   dealers — there's no unique customer ID in the source data), not a per-dealer one.
 
+Contract-reissue dedupe rule (added 2026-08, per Puis — found by diffing against
+the Collection Report, which showed Dashboard MO overcounting Jul'26 by 5):
+  Some contracts get cancelled and re-issued as a brand-new contract_no for the
+  SAME purchase (e.g. wrong plan, device swap) — MACRO keeps both rows as
+  status == 'Contract', so there's no Decline/Cancel row to trigger the rule
+  above. Collection Report only keeps the reissued (latest) contract; MACRO
+  double-counts both. Rule: group Contract rows by (customer_name, dealer_name);
+  within a group, chain-cluster rows whose contract_date is within 30 days of
+  the previous row in the cluster; for any cluster of 2+, keep only the row with
+  the latest contract_no, drop the rest from Contract/Decline counting (App In
+  still unaffected). Deliberately NOT amount-matched — verified cases include a
+  device-tier change (used -> new phone) where finance_amt differs between the
+  cancelled and reissued contract, so requiring equal amounts would miss it.
+  This is per-dealer (unlike the rule above, which is cross-dealer) because a
+  reissue happens at the same showroom that wrote the original contract.
+
 Safety: refuses to publish if the workbook was not refreshed, or if the rebuilt
 numbers drift from the previous build beyond tolerance.
 """
@@ -48,7 +64,7 @@ import shutil
 import sys
 import zipfile
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
 
 # ── paths ──────────────────────────────────────────────────────────────────
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -272,6 +288,67 @@ def compute_dedupe_exclusions(rows):
     return excluded
 
 
+REISSUE_WINDOW_DAYS = 30
+
+
+def _parse_con_date(ds):
+    try:
+        return datetime.strptime(ds, "%d/%m/%Y").date()
+    except (ValueError, TypeError):
+        return None
+
+
+def compute_reissue_exclusions(rows):
+    """Contract-reissue dedupe (see module docstring).
+
+    Groups Contract rows by (customer_name, dealer_name). Within a group,
+    sorts by contract_date and chain-clusters rows that are within
+    REISSUE_WINDOW_DAYS of the previous row in the running cluster (so A, B,
+    C at day 0/25/50 all cluster together even though A-C is 50 days apart).
+    For any cluster of 2+ rows, keeps only the highest contract_no and
+    excludes the rest. Not amount-matched on purpose — a reissue can change
+    the financed amount (e.g. used -> new device).
+    """
+    bygrp = defaultdict(list)
+    for rec in rows:
+        if rec.get("status") != "Contract":
+            continue
+        name, dlr = rec.get("cust"), rec.get("dlr")
+        if not name or not dlr:
+            continue
+        d = _parse_con_date(rec.get("con_date"))
+        if d is None:
+            continue
+        bygrp[(name, dlr)].append((d, rec))
+
+    def conno_key(r):
+        c = r.get("conno") or ""
+        try:
+            return int(c)
+        except ValueError:
+            return -1
+
+    excluded = set()
+    for key, items in bygrp.items():
+        if len(items) < 2:
+            continue
+        items.sort(key=lambda t: t[0])
+        cluster = [items[0]]
+        for d, rec in items[1:]:
+            if (d - cluster[-1][0]).days <= REISSUE_WINDOW_DAYS:
+                cluster.append((d, rec))
+            else:
+                if len(cluster) >= 2:
+                    keep = max((r for _, r in cluster), key=conno_key)
+                    excluded.update(r.get("appno") for _, r in cluster
+                                    if r is not keep)
+                cluster = [(d, rec)]
+        if len(cluster) >= 2:
+            keep = max((r for _, r in cluster), key=conno_key)
+            excluded.update(r.get("appno") for _, r in cluster if r is not keep)
+    return excluded
+
+
 def build(z, ss, cutoff):
     """cutoff = (year, month) of the first INCOMPLETE month; drop it and later."""
     D = defaultdict(new_dealer)
@@ -282,7 +359,11 @@ def build(z, ss, cutoff):
     rows = [rec for rec in iter_rows(z, ss)
             if rec.get("status") in ("Contract", "Decline/Cancel", "Approve")
             and rec.get("dlr")]
-    dedupe_excluded = compute_dedupe_exclusions(rows)
+    decline_excluded = compute_dedupe_exclusions(rows)
+    reissue_excluded = compute_reissue_exclusions(rows)
+    dedupe_excluded = decline_excluded | reissue_excluded
+    stats["decline_dedupe_excluded_rows"] = len(decline_excluded)
+    stats["reissue_dedupe_excluded_rows"] = len(reissue_excluded)
     stats["dedupe_excluded_rows"] = len(dedupe_excluded)
 
     for rec in rows:
@@ -557,9 +638,13 @@ def main(force=False):
     if unknown:
         log("WARNING unmapped name prefixes: %s" % dict(unknown))
     if stats.get("dedupe_excluded_rows"):
-        log("repeat-customer dedupe: %d rows excluded from Contract/Decline "
-            "(%d superseded contracts, App In unaffected)"
+        log("repeat-customer dedupe: %d rows excluded from Contract/Decline total "
+            "(%d superseded contracts; App In unaffected)"
             % (stats["dedupe_excluded_rows"], stats.get("contract_deduped_out", 0)))
+        log("  - decline-linked (cross-dealer, needs a Decline/Cancel): %d"
+            % stats["decline_dedupe_excluded_rows"])
+        log("  - contract-reissue (same dealer, within %d days, no decline needed): %d"
+            % (REISSUE_WINDOW_DAYS, stats["reissue_dedupe_excluded_rows"]))
 
     # ---- GATE 2: internal consistency ----
     problems = []

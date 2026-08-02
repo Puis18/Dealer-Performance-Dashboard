@@ -6,10 +6,10 @@
   "from": "20220901"
  },
  "totals": {
-  "contracts": 146966,
+  "contracts": 146899,
   "dealers": 2697,
-  "retail": 3271915728,
-  "finance": 2474003052,
+  "retail": 3270690483,
+  "finance": 2472982936,
   "last_month": "Jul'26"
  },
  "built": "2026-08-02"
