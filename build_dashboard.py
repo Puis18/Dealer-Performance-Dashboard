@@ -12,6 +12,9 @@ Design notes (verified against the existing dashboard to the unit):
                         see dedupe rule below — App In always reflects every raw application)
   * Decline (dc)     = application_status == 'Decline/Cancel', bucketed by application_date
   * segment MO       = sub_product_type_name in {มือถือใหม่, มือถือมือสอง}
+                        OR product_category_name_th (ct) == 'โทรศัพท์มือถือ'
+                        (catches phones source-tagged under the appliance bucket —
+                        see MO_CT comment above)
     segment EA       = everything else (incl. used appliances / furniture / e-motorcycle)
   * flat_rate        = raw value / 100  (raw 84 -> 0.84%)
   * gender           = Thai title prefix of customer_name (100% coverage: นาย/นาง/นางสาว)
@@ -59,6 +62,13 @@ STATE = os.path.join(BASE, ".dashboard_build_state.json")
 MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 SUB_MO = {"มือถือใหม่", "มือถือมือสอง"}          # everything else -> EA
+# Source-data bug (found 2026-08 comparing against Collection Report): some
+# mobile-phone contracts get sub_product_type_name = 'เครื่องใช้ไฟฟ้าใหม่'
+# (new appliance) instead of a มือถือ* bucket. product_category_name_th (ct)
+# still correctly tags them 'โทรศัพท์มือถือ' — checked the full
+# sub_product_type x category crosstab, this is the ONLY category value that
+# leaks across from the appliance bucket (TVs/fridges/etc. never carry it).
+MO_CT = {"โทรศัพท์มือถือ"}
 MALE_PREFIX = {"นาย"}
 FEMALE_PREFIX = {"นาง", "นางสาว"}
 
@@ -279,7 +289,7 @@ def build(z, ss, cutoff):
         status = rec.get("status")
         name = rec.get("dlr")
         sub = rec.get("subpt", "")
-        seg = "MO" if sub in SUB_MO else "EA"
+        seg = "MO" if (sub in SUB_MO or rec.get("ct") in MO_CT) else "EA"
         subtypes[sub] += 1
         d = D[name]
         deduped_out = rec.get("appno") in dedupe_excluded
