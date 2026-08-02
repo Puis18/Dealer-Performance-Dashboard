@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Dealer Contracts Performance Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --g1:#1E3365;--g2:#126C3D;--g3:#1E8F57;--g4:#7CBE9C;--g5:#9F1C33;--g6:#E3EEE8;
+  --bg:#EEF1EE;--card:#fff;--bdr:#DDE3E0;
+  --txt:#1A1A1A;--txt2:#6C757D;--txt3:#ADB5BD;
+  --sh:0 1px 5px rgba(0,0,0,.10);--r:8px;
+}
+html{font-family:'Segoe UI','Noto Sans Thai',Arial,sans-serif;font-size:13px;height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--txt);display:flex;flex-direction:column;height:100%;overflow:hidden}
+header{background:var(--g1);padding:0 24px;height:68px;display:flex;align-items:center;
+  box-shadow:0 2px 8px rgba(0,0,0,.25);flex-shrink:0}
+header h1{color:#fff;font-size:19px;font-weight:700;flex:1;letter-spacing:-.2px}
+.hdr-right{display:flex;gap:8px;align-items:center}
+.hdr-badge{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);
+  border-radius:20px;padding:5px 14px;color:#fff;font-size:11px;line-height:1.6;text-align:center}
+.hdr-badge b{display:block;font-size:9px;opacity:.65;font-weight:400}
+/* ── Filter bar ── */
+.filter-bar{background:#fff;border-bottom:1px solid var(--bdr);
+  flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,.06);position:relative}
+.filter-summary{display:flex;align-items:center;gap:6px;padding:9px 24px;
+  font-size:11px;font-weight:600;color:var(--txt2);cursor:pointer;user-select:none}
+.filter-summary b{color:var(--g1);font-weight:700}
+.filter-summary .hint{margin-left:auto;font-size:10px;color:var(--txt3);font-weight:400}
+.filter-rows-wrap{max-height:0;opacity:0;overflow:hidden;
+  transition:max-height .22s ease,opacity .18s ease;
+  padding:0 24px;display:flex;flex-direction:column;gap:8px}
+.filter-bar:hover .filter-rows-wrap,
+.filter-bar:focus-within .filter-rows-wrap{
+  max-height:260px;opacity:1;padding:2px 24px 12px}
+.filter-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.filter-label{font-size:11px;font-weight:700;color:var(--txt2);min-width:70px;
+  letter-spacing:.5px;text-transform:uppercase;flex-shrink:0}
+.chip{border:1.5px solid var(--bdr);border-radius:20px;padding:5px 13px;font-size:11px;
+  font-weight:600;cursor:pointer;background:#fff;color:var(--txt2);transition:all .15s;
+  white-space:nowrap;user-select:none}
+.chip:hover{border-color:var(--g3);color:var(--g1);background:var(--g6)}
+.chip.on{background:var(--g1);border-color:var(--g1);color:#fff}
+.chip.all{background:var(--g6);border-color:var(--g4);color:var(--g1)}
+.chip.all.on{background:var(--g1);border-color:var(--g1);color:#fff}
+.divider{width:1px;height:20px;background:var(--bdr);margin:0 2px;flex-shrink:0}
+.mode-toggle{display:flex;border:1.5px solid var(--g1);border-radius:20px;overflow:hidden;flex-shrink:0}
+.mode-btn{padding:5px 14px;font-size:11px;font-weight:700;cursor:pointer;
+  background:#fff;color:var(--g1);border:none;transition:.15s;user-select:none}
+.mode-btn.on{background:var(--g1);color:#fff}
+/* ── Dealer search — click-to-open ── */
+.dlr-wrap{display:flex;align-items:center;gap:8px;flex:1;min-width:0}
+.dlr-pos{position:relative}
+.dlr-toggle{background:var(--g6);border:1.5px solid var(--g4);border-radius:20px;
+  padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;color:var(--g1);
+  white-space:nowrap;transition:all .15s;display:flex;align-items:center;gap:5px}
+.dlr-toggle:hover{background:var(--g1);color:#fff;border-color:var(--g1)}
+.dlr-toggle.active{background:var(--g1);color:#fff;border-color:var(--g1)}
+/* search box — hidden by default, shown via JS .open class */
+.dlr-search-box{position:absolute;top:0;left:0;background:#fff;
+  border:1.5px solid var(--g3);border-radius:20px;padding:5px 14px;
+  font-size:11px;font-family:inherit;outline:none;width:260px;
+  display:none;z-index:10}
+.dlr-search-box.open{display:block}
+.dlr-toggle.open{opacity:0;pointer-events:none}
+.dlr-drop{position:absolute;top:calc(100% + 6px);left:0;background:#fff;
+  border:1.5px solid var(--bdr);border-radius:var(--r);
+  box-shadow:0 4px 20px rgba(0,0,0,.13);max-height:320px;overflow-y:auto;
+  z-index:400;min-width:320px;display:none}
+.dlr-drop.open{display:block}
+.dlr-opt{padding:8px 14px;cursor:pointer;font-size:12px;border-bottom:1px solid #f5f5f5;
+  display:flex;align-items:center;justify-content:space-between}
+.dlr-opt:hover{background:var(--g6)}
+.dlr-opt.on{background:var(--g6);color:var(--g1);font-weight:700}
+.dlr-cnt{font-size:10px;color:var(--txt3);font-weight:600;margin-left:6px;flex-shrink:0}
+.dlr-sel{font-size:11px;font-weight:700;color:var(--g1);padding:5px 0;max-width:240px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0}
+.dlr-clear{display:none;align-items:center;justify-content:center;
+  width:20px;height:20px;border-radius:50%;border:none;background:var(--txt3);
+  color:#fff;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0;line-height:1;
+  transition:background .15s;padding:0}
+.dlr-clear:hover{background:#e53e3e}
+/* ── KPI ── */
+.kpi-row{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;padding:6px 24px 4px;flex-shrink:0}
+.kpi{background:var(--card);border-radius:var(--r);box-shadow:var(--sh);
+  padding:5px 10px;border-top:2px solid var(--g1);min-width:0}
+.kpi-lbl{font-size:8px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.3px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kpi-val{font-size:15px;font-weight:800;color:var(--txt);line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kpi-sub{font-size:8px;color:var(--txt3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* ── Tabs ── */
+.tab-bar{display:flex;background:#fff;border-bottom:2px solid var(--bdr);padding:0 24px;flex-shrink:0}
+.tab-btn{padding:11px 22px;font-size:12px;font-weight:700;color:var(--txt2);
+  border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;
+  margin-bottom:-2px;transition:.15s}
+.tab-btn:hover{color:var(--g1)}
+.tab-btn.on{color:var(--g1);border-bottom-color:var(--g1)}
+.tab-content{flex:1;min-height:0;overflow:hidden;position:relative}
+.tab-pane{display:none;height:100%;overflow-y:auto}
+.tab-pane.on{display:block}
+/* ── Layout ── */
+.page{padding:14px 24px 32px}
+.row{display:flex;gap:12px;margin-bottom:12px}
+.card{background:var(--card);border-radius:var(--r);box-shadow:var(--sh);
+  padding:14px 16px;flex:1;min-width:0}
+.card h3{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;
+  color:var(--txt);margin-bottom:12px;padding-bottom:7px;border-bottom:2px solid var(--g6)}
+.cw{position:relative;width:100%}
+.g4cols{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px}
+.g3cols{display:grid;grid-template-columns:1fr 1fr 1.3fr;gap:12px;margin-bottom:12px}
+.g2cols{display:grid;grid-template-columns:1.8fr 1fr;gap:12px}
+/* ── Table ── */
+.tbl{width:100%;border-collapse:collapse;font-size:11.5px}
+.tbl th{background:var(--g1);color:#fff;padding:7px 10px;text-align:left;font-weight:700;font-size:10.5px;letter-spacing:.3px}
+.tbl td{padding:6px 10px;border-bottom:1px solid #f0f0f0;vertical-align:middle}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tr:hover td{background:#fafffe}
+.tbl td:last-child,.tbl th:last-child{text-align:right}
+.tbl td.num{font-weight:700;color:var(--g1)}
+.badge{display:inline-flex;align-items:center;justify-content:center;
+  width:19px;height:19px;border-radius:50%;font-size:9px;font-weight:700;
+  background:var(--g6);color:var(--g1);flex-shrink:0}
+.badge.top{background:var(--g1);color:#fff}
+.scroll{max-height:310px;overflow-y:auto}
+.scroll::-webkit-scrollbar{width:3px}
+.scroll::-webkit-scrollbar-thumb{background:var(--g4);border-radius:3px}
+/* ── Bar rows ── */
+.bar-row{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+.bar-lbl{font-size:11px;min-width:130px;max-width:130px;color:var(--txt);
+  text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0}
+.bar-track{flex:1;height:14px;background:#F0F0F0;border-radius:7px;overflow:hidden}
+.bar-fill{height:100%;border-radius:7px;background:var(--g1);transition:width .5s ease}
+.bar-num{font-size:11px;font-weight:700;min-width:38px;text-align:right;color:var(--g1)}
+.no-data{text-align:center;padding:24px;color:var(--txt3);font-size:12px}
+footer{text-align:center;padding:14px;font-size:10px;color:var(--txt3);
+  border-top:1px solid var(--bdr);margin-top:8px}
+footer span{color:var(--g2);font-weight:600}
+
+/* ═══════════ RESPONSIVE — Tablet & Phone ═══════════ */
+/* Tap-to-open filter bar (touch devices have no :hover) */
+.filter-bar.open-f .filter-rows-wrap{max-height:400px;opacity:1;padding:2px 16px 12px}
+
+/* ── Tablet (≤1024px) ── */
+@media (max-width:1024px){
+  html{overflow:auto;height:auto;font-size:12.5px}
+  body{overflow:auto;height:auto;min-height:100%}
+  header{padding:0 16px}
+  header h1{font-size:16px}
+  .filter-summary{padding:9px 16px}
+  .filter-rows-wrap{padding:0 16px}
+  .filter-bar:hover .filter-rows-wrap,
+  .filter-bar:focus-within .filter-rows-wrap{padding:2px 16px 12px}
+  .kpi-row{grid-template-columns:repeat(4,1fr);padding:6px 16px 4px}
+  .tab-bar{padding:0 16px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .tab-btn{white-space:nowrap;padding:11px 16px}
+  .tab-content{overflow:visible;flex:none}
+  .tab-pane{height:auto;overflow-y:visible}
+  .page{padding:14px 16px 24px}
+  .g4cols{grid-template-columns:repeat(2,1fr)!important}
+  .g3cols{grid-template-columns:repeat(2,1fr)}
+  .g2cols{grid-template-columns:1fr}
+  .scroll{max-height:none}
+}
+
+/* ── Phone (≤640px) ── */
+@media (max-width:640px){
+  html{font-size:12px}
+  header{height:auto;min-height:60px;padding:10px 14px;flex-wrap:wrap;gap:8px}
+  header h1{font-size:15px;flex:1 0 100%}
+  .hdr-right{flex-wrap:wrap;gap:6px}
+  .hdr-badge{padding:4px 10px;font-size:10px}
+  .filter-summary{padding:10px 14px;flex-wrap:wrap;gap:4px}
+  .filter-summary .hint{display:none}
+  .filter-rows-wrap{padding:0 14px}
+  .filter-bar.open-f .filter-rows-wrap,
+  .filter-bar:focus-within .filter-rows-wrap{padding:2px 14px 12px}
+  .filter-label{min-width:100%;margin-bottom:2px}
+  .dlr-wrap{flex-wrap:wrap}
+  .kpi-row{grid-template-columns:repeat(2,1fr);gap:6px;padding:8px 14px 4px}
+  .kpi-val{font-size:16px}
+  .tab-btn{padding:11px 14px;font-size:11.5px}
+  .page{padding:12px 14px 24px}
+  .row{flex-direction:column;gap:12px}
+  .row .card{flex:1 1 auto!important;width:100%}
+  .g4cols,.g3cols,.g2cols{grid-template-columns:1fr!important}
+  .bar-lbl{min-width:96px;max-width:96px}
+  /* dealer search dropdown must not overflow a narrow viewport.
+     Keep .dlr-pos as the positioning context; only cap the widths. */
+  .dlr-pos{width:100%}
+  .dlr-search-box{width:100%;max-width:calc(100vw - 32px)}
+  .dlr-drop{min-width:0;width:100%;max-width:calc(100vw - 32px)}
+  .dlr-sel{max-width:100%}
+  /* wide tables scroll sideways instead of squeezing */
+  .scroll,.card > .tbl{overflow-x:auto}
+  .tbl{font-size:11px}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>&#128202; Contracts Performance Dashboard</h1>
+  <div class="hdr-right">
+    <div class="hdr-badge"><b>Dealers</b>__NDEALERS__ ราย</div>
+    <div class="hdr-badge" id="hdrDealer"><b>Dealer</b>ทั้งหมด</div>
+    <div class="hdr-badge" id="hdrPeriod"><b>Period</b>ทั้งหมด</div>
+  </div>
+</header>
+
+<div class="filter-bar" tabindex="0">
+  <div class="filter-summary" id="filterSummary" onclick="this.parentNode.classList.toggle('open-f')">
+    <span>&#128269; <b>ตัวกรอง</b></span>
+    <span id="fsText">ดีลเลอร์: ทั้งหมด &nbsp;|&nbsp; ปี: ทั้งหมด &nbsp;|&nbsp; ช่วงเวลา: ทั้งหมด &nbsp;|&nbsp; สินค้า: ทั้งหมด</span>
+    <span class="hint">คลิก / แตะที่นี่เพื่อเปลี่ยนตัวกรอง</span>
+  </div>
+  <div class="filter-rows-wrap">
+  <!-- Row 1: Dealer -->
+  <div class="filter-row">
+    <span class="filter-label">ดีลเลอร์</span>
+    <button class="chip all on" id="dAll" onclick="setDealer(-1)">ทั้งหมด</button>
+    <!-- Dealer search: click to open, click-outside to close -->
+    <div class="dlr-pos" id="dlrPos">
+      <button class="dlr-toggle" id="dlrToggle" onclick="openDlrSearch()">&#128269; ค้นหาดีลเลอร์</button>
+      <input class="dlr-search-box" id="dlrSearch" type="text"
+             placeholder="พิมพ์ชื่อดีลเลอร์..." autocomplete="off"
+             oninput="filterDealers(this.value)"
+             onkeydown="if(event.key==='Escape')closeDlrSearch()" />
+      <div class="dlr-drop" id="dlrDrop"></div>
+    </div>
+    <div class="dlr-sel" id="dlrSel"></div>
+    <button class="dlr-clear" id="dlrClear" onclick="setDealer(-1)" title="ล้างการเลือก">&#10005;</button>
+  </div>
+  <!-- Row 2: Year -->
+  <div class="filter-row" id="yearRow">
+    <span class="filter-label">ปี</span>
+    <select id="yearSelect" onchange="setYear(this.value)"
+      style="border:1.5px solid var(--bdr);border-radius:20px;padding:5px 13px;font-size:11px;
+      font-weight:600;color:var(--txt2);background:#fff;cursor:pointer;font-family:inherit"></select>
+  </div>
+  <!-- Row 3: Period -->
+  <div class="filter-row">
+    <span class="filter-label">ช่วงเวลา</span>
+    <div class="mode-toggle">
+      <button class="mode-btn on" id="modeM" onclick="setMode('M')">เดือน</button>
+      <button class="mode-btn"    id="modeQ" onclick="setMode('Q')">ไตรมาส</button>
+    </div>
+    <div class="divider"></div>
+    <div id="periodChips" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"></div>
+  </div>
+  <!-- Row 4: Product segment -->
+  <div class="filter-row">
+    <span class="filter-label">สินค้า</span>
+    <button class="chip all on" id="segAll" onclick="setSeg('all')">ทั้งหมด</button>
+    <button class="chip" id="segMO" onclick="setSeg('MO')">MO (มือถือ)</button>
+    <button class="chip" id="segEA" onclick="setSeg('EA')">EA (เครื่องใช้ไฟฟ้า)</button>
+  </div>
+  </div>
+</div>
+
+<div class="kpi-row">
+  <div class="kpi"><div class="kpi-lbl">Contracts</div><div class="kpi-val" id="kC">—</div><div class="kpi-sub">จำนวนสัญญา</div></div>
+  <div class="kpi"><div class="kpi-lbl">Retail Price</div><div class="kpi-val" id="kR">—</div><div class="kpi-sub">ราคาขายรวม (฿)</div></div>
+  <div class="kpi"><div class="kpi-lbl">Finance Amount</div><div class="kpi-val" id="kF">—</div><div class="kpi-sub">ยอดจัดสินเชื่อ (฿)</div></div>
+  <div class="kpi"><div class="kpi-lbl">Avg Ticket Size</div><div class="kpi-val" id="kT">—</div><div class="kpi-sub">ขนาดเฉลี่ยต่อสัญญา (฿)</div></div>
+  <div class="kpi"><div class="kpi-lbl">App In</div><div class="kpi-val" id="kAI">—</div><div class="kpi-sub">ใบสมัครเข้าทั้งหมด</div></div>
+  <div class="kpi"><div class="kpi-lbl">Decline / Cancel</div><div class="kpi-val" id="kDC">—</div><div class="kpi-sub">ถูกปฏิเสธ/ยกเลิก</div></div>
+  <div class="kpi"><div class="kpi-lbl">% Approved</div><div class="kpi-val" id="kAP">—</div><div class="kpi-sub">Contract÷(Contract+Decline)</div></div>
+</div>
+
+<div class="tab-bar">
+  <button class="tab-btn on" onclick="switchTab('ov',this)">&#128202; ภาพรวมการขาย</button>
+  <button class="tab-btn"   onclick="switchTab('pr',this)">&#128100; โปรไฟล์ลูกค้า</button>
+  <button class="tab-btn"   onclick="switchTab('dt',this)">&#128203; รายละเอียดเพิ่มเติม</button>
+</div>
+
+<div class="tab-content">
+<div id="tab-ov" class="tab-pane on"><div class="page">
+  <div class="row">
+    <div class="card" style="flex:2.2">
+      <h3>Sales Trend — แนวโน้มรายเดือน</h3>
+      <div class="cw" style="height:215px"><canvas id="cSales"></canvas></div>
+    </div>
+    <div class="card">
+      <h3>By Province (Top 12)</h3>
+      <div id="bProvince" style="padding-top:4px"></div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="card">
+      <h3>All Showroom</h3>
+      <div class="scroll">
+        <table class="tbl" id="tShow">
+          <thead><tr><th>#</th><th>Showroom</th><th>สัญญา</th><th>%</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Best-Selling Models</h3>
+      <div class="scroll">
+        <table class="tbl" id="tProd">
+          <thead><tr><th>#</th><th>สินค้า</th><th>สัญญา</th><th>%</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="card"><h3>Top 10 Showroom</h3><div id="bShow10" style="padding-top:4px"></div></div>
+    <div class="card"><h3>Top Brand</h3><div id="bProd10" style="padding-top:4px"></div></div>
+  </div>
+</div></div>
+
+<div id="tab-pr" class="tab-pane"><div class="page">
+  <div class="g4cols" style="grid-template-columns:repeat(4,1fr)">
+    <div class="card"><h3>By Gender</h3><div class="cw" style="height:170px"><canvas id="cGender"></canvas></div></div>
+    <div class="card"><h3>By Flat Rate</h3><div class="cw" style="height:170px"><canvas id="cRate"></canvas></div></div>
+    <div class="card"><h3>By Term (งวด)</h3><div class="cw" style="height:170px"><canvas id="cTerm"></canvas></div></div>
+    <div class="card"><h3>Ticket Size (ยอดจัดสินเชื่อ)</h3><div class="cw" style="height:170px"><canvas id="cTicket"></canvas></div></div>
+  </div>
+  <div class="g3cols">
+    <div class="card"><h3>By Age Range</h3><div id="bAge" style="padding-top:6px"></div></div>
+    <div class="card"><h3>By NCB Profile</h3><div class="cw" style="height:200px"><canvas id="cNcb"></canvas></div></div>
+    <div class="card"><h3>By Province (Top 10)</h3><div id="bProvince2" style="padding-top:6px"></div></div>
+  </div>
+  <div class="g2cols" style="margin-top:12px">
+    <div class="card"><h3>By Occupation (อาชีพ)</h3><div class="cw" style="height:360px"><canvas id="cJob"></canvas></div></div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="card"><h3>By Category (หมวดหมู่)</h3><div class="cw" style="height:170px"><canvas id="cCat"></canvas></div></div>
+      <div class="card"><h3>By Age Range (กราฟ)</h3><div class="cw" style="height:170px"><canvas id="cAge2"></canvas></div></div>
+    </div>
+  </div>
+  <div class="row" style="margin-top:12px">
+    <div class="card">
+      <h3>ตารางอาชีพ</h3>
+      <table class="tbl" id="tJob">
+        <thead><tr><th>#</th><th>อาชีพ</th><th>จำนวน</th><th>%</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</div></div>
+
+<div id="tab-dt" class="tab-pane"><div class="page">
+  <div class="row">
+    <div class="card">
+      <h3>Dealer Performance Comparison (Top 50)</h3>
+      <div class="scroll">
+        <table class="tbl" id="tDlr">
+          <thead><tr><th>#</th><th>Dealer</th><th>สัญญา</th><th>Finance (K฿)</th><th>%</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+</div><!-- /tab-content -->
+
+<script>
+/* ═══════════════ DATA ═══════════════ */
+var MO_ALL=__MO_ALL__;
+var YEARS=["22", "23", "24", "25", "26"];
+var YR_MO=__YR_MO__;
+var DB=__DB__;
+/* ═══════════════ STATE ═══════════════ */
+var ST = {
+  dlr: -1,
+  selYr: 'all',   // 'all' or '22','23',...
+  moIdxs: [],     // indices into MO (active month list)
+  MO: MO_ALL,     // active month list (may be year-filtered)
+  mode: 'M',
+  seg: 'all'      // 'all' | 'MO' | 'EA' — product segment filter
+};
+
+// Resolve a base field name (mo/sw/md/cd/gn/ag/nc/tm/fr/pv/oc/ct/tot/ai/dc)
+// to the segment-specific field name based on the current product filter.
+function fkey(base){ return ST.seg==='all' ? base : base+ST.seg; }
+
+/* ═══════════════ DEALER SEARCH — click-to-open ═══════════════ */
+function openDlrSearch(){
+  var inp = document.getElementById('dlrSearch');
+  var tog = document.getElementById('dlrToggle');
+  inp.classList.add('open');
+  tog.classList.add('open');
+  filterDealers('');
+  document.getElementById('dlrDrop').classList.add('open');
+  setTimeout(function(){ inp.focus(); }, 30);
+}
+
+function closeDlrSearch(){
+  document.getElementById('dlrSearch').classList.remove('open');
+  document.getElementById('dlrToggle').classList.remove('open');
+  document.getElementById('dlrDrop').classList.remove('open');
+  document.getElementById('dlrSearch').value = '';
+}
+
+// Close when clicking outside the dealer search area
+document.addEventListener('click', function(e){
+  var pos = document.getElementById('dlrPos');
+  if(pos && !pos.contains(e.target)){
+    closeDlrSearch();
+  }
+});
+
+function filterDealers(q){
+  var dd = document.getElementById('dlrDrop');
+  var qn = q.trim().toLowerCase();
+  var top = qn
+    ? DB.filter(function(d){return d.n.toLowerCase().indexOf(qn)>=0;}).slice(0,60)
+    : DB.slice(0,60);
+  dd.innerHTML = top.map(function(d){
+    var idx=DB.indexOf(d);
+    return '<div class="dlr-opt'+(ST.dlr===idx?' on':'')+'" onclick="pickDealer('+idx+')">'+
+      '<span>'+d.n+'</span><span class="dlr-cnt">'+d[fkey('tot')].toLocaleString()+' สัญญา</span></div>';
+  }).join('');
+}
+
+/* ═══════════════ DEALER ACTIVE MO ═══════════════ */
+// Returns the slice of MO_ALL from dealer's first data month to last data month.
+// For "all dealers" returns full MO_ALL.
+// Union of months where ANY dealer has data, for the current product segment (fkey('mo')).
+function activeMonthsForSeg(){
+  var mokey=fkey('mo');
+  var seen={};
+  DB.forEach(function(d){
+    Object.keys(d[mokey]).forEach(function(m){ seen[m]=true; });
+  });
+  return Object.keys(seen);
+}
+
+function dealerBaseMO(dlrIdx){
+  var moKeys = dlrIdx===-1 ? activeMonthsForSeg() : Object.keys(DB[dlrIdx][fkey('mo')]);
+  if(!moKeys.length) return MO_ALL;
+  // Find earliest and latest month in MO_ALL that has data (for this dealer+segment)
+  var first=MO_ALL.length, last=-1;
+  moKeys.forEach(function(m){
+    var i=MO_ALL.indexOf(m);
+    if(i>=0){ if(i<first)first=i; if(i>last)last=i; }
+  });
+  if(first>last) return MO_ALL;
+  // Return from first data month to end of MO_ALL (show future months too so trend is visible)
+  return MO_ALL.slice(first);
+}
+
+// Derive available years from a MO array
+function moToYears(moArr){
+  var seen={};
+  moArr.forEach(function(m){ seen[m.split("'")[1]]=true; });
+  return Object.keys(seen).sort();
+}
+
+function applyDealerMO(dlrIdx){
+  ST.baseMO = dealerBaseMO(dlrIdx);       // full base for this dealer
+  ST.dlrYears = moToYears(ST.baseMO);     // years available
+  ST.selYr = 'all';                        // reset year to "all"
+  ST.MO = ST.baseMO;
+  renderYearChips();
+  setMode(ST.mode);                        // re-render period chips + select all
+}
+
+function pickDealer(idx){
+  ST.dlr=idx;
+  closeDlrSearch();
+  document.getElementById('dAll').classList.remove('on');
+  document.getElementById('dlrSel').textContent = DB[idx].n;
+  document.getElementById('dlrToggle').classList.add('active');
+  document.getElementById('dlrClear').style.display='inline-flex';
+  applyDealerMO(idx);   // sets MO, renders chips, calls updateAll via selectAllPeriod
+}
+
+function setDealer(idx){
+  ST.dlr=idx;
+  closeDlrSearch();
+  document.getElementById('dAll').classList.toggle('on',idx===-1);
+  document.getElementById('dlrSel').textContent='';
+  document.getElementById('dlrToggle').classList.remove('active');
+  document.getElementById('dlrClear').style.display='none';
+  applyDealerMO(idx);
+}
+
+/* ═══════════════ YEAR FILTER ═══════════════ */
+function renderYearChips(){
+  var sel=document.getElementById('yearSelect');
+  var yrs = ST.dlrYears || YEARS;
+  var html='<option value="all"'+(ST.selYr==='all'?' selected':'')+'>ทั้งหมด (ทุกปี)</option>';
+  yrs.forEach(function(y){
+    html+='<option value="'+y+'"'+(ST.selYr===y?' selected':'')+'>20'+y+'</option>';
+  });
+  sel.innerHTML=html;
+}
+
+function setYear(y){
+  ST.selYr=y;
+  // Filter within dealer's base MO
+  var base = ST.baseMO || MO_ALL;
+  ST.MO = y==='all' ? base : base.filter(function(m){ return m.split("'")[1]===y; });
+  renderYearChips();
+  setMode(ST.mode);
+}
+
+/* ═══════════════ PERIOD FILTER ═══════════════ */
+var QMAP = {'1':['Jan','Feb','Mar'],'2':['Apr','May','Jun'],
+            '3':['Jul','Aug','Sep'],'4':['Oct','Nov','Dec']};
+
+function renderPeriodChips(){
+  var wrap=document.getElementById('periodChips');
+  var selStyle='border:1.5px solid var(--bdr);border-radius:20px;padding:5px 13px;font-size:11px;font-weight:600;color:var(--txt2);background:#fff;cursor:pointer;font-family:inherit;min-width:120px';
+  var opts='<option value="all">ทั้งหมด</option>';
+  if(ST.mode==='M'){
+    opts+=ST.MO.map(function(m,i){
+      return '<option value="m'+i+'">'+m+'</option>';
+    }).join('');
+  } else {
+    var qseen={};
+    ST.MO.forEach(function(m){
+      var mo=m.split("'")[0];
+      for(var q in QMAP){ if(QMAP[q].indexOf(mo)>=0){ qseen[q]=true; } }
+    });
+    var qs=Object.keys(qseen).sort();
+    opts+=qs.map(function(q){
+      var yr = ST.selYr==='all' ? '' : " '"+ST.selYr;
+      return '<option value="q'+q+'">Q'+q+yr+'</option>';
+    }).join('');
+  }
+  wrap.innerHTML='<select id="periodSelect" onchange="selectPeriod(this.value)" style="'+selStyle+'">'+opts+'</select>';
+}
+
+function selectPeriod(v){
+  if(v==='all'){ selectAllPeriod(); }
+  else if(v.charAt(0)==='m'){ selectMonth(parseInt(v.slice(1),10)); }
+  else if(v.charAt(0)==='q'){ selectQtr(v.slice(1)); }
+}
+
+function clearChips(){ document.querySelectorAll('#periodChips .chip').forEach(function(c){c.classList.remove('on');}); }
+
+function selectAllPeriod(){
+  ST.moIdxs=ST.MO.map(function(_,i){return i;});
+  clearChips();
+  var el=document.getElementById('pAll'); if(el)el.classList.add('on');
+  updateAll();
+}
+
+function selectMonth(i){
+  ST.moIdxs=[i];
+  clearChips();
+  var el=document.getElementById('pM'+i); if(el)el.classList.add('on');
+  updateAll();
+}
+
+function selectQtr(q){
+  var qmos=QMAP[q]||[];
+  ST.moIdxs=[];
+  ST.MO.forEach(function(m,i){
+    var mo=m.split("'")[0];
+    if(qmos.indexOf(mo)>=0) ST.moIdxs.push(i);
+  });
+  clearChips();
+  var el=document.getElementById('pQ'+q); if(el)el.classList.add('on');
+  updateAll();
+}
+
+function setMode(m){
+  ST.mode=m;
+  document.getElementById('modeM').classList.toggle('on',m==='M');
+  document.getElementById('modeQ').classList.toggle('on',m==='Q');
+  renderPeriodChips();
+  selectAllPeriod();
+}
+
+function setSeg(seg){
+  ST.seg=seg;
+  document.getElementById('segAll').classList.toggle('on',seg==='all');
+  document.getElementById('segMO').classList.toggle('on',seg==='MO');
+  document.getElementById('segEA').classList.toggle('on',seg==='EA');
+  // Keep whatever period/year is currently selected — switching product segment
+  // only changes which data is counted for that same period, it doesn't move the period.
+  updateAll();
+}
+
+/* ═══════════════ AGGREGATION ═══════════════ */
+function dealers(){ return ST.dlr===-1 ? DB : [DB[ST.dlr]]; }
+
+// Get contracts/retail/finance for current dealer+period selection
+function aggKPI(){
+  var c=0,r=0,f=0;
+  var mokey=fkey('mo');
+  dealers().forEach(function(d){
+    ST.moIdxs.forEach(function(mi){
+      var mo=ST.MO[mi];
+      var v=d[mokey][mo]; if(!v)return;
+      c+=v[0]; r+=v[1]; f+=v[2];
+    });
+  });
+  return {c:c,r:r,f:f,t:c>0?f/c:0};
+}
+
+function aggMonthly(){
+  var mokey=fkey('mo');
+  return ST.MO.map(function(mo){
+    return dealers().reduce(function(s,d){
+      var v=d[mokey][mo]; return s+(v?v[0]:0);
+    },0);
+  });
+}
+
+// App-in / Decline-Cancel KPI (by application month, segment + period aware)
+function aggAppKPI(){
+  var ai=0, dc=0;
+  var aikey=fkey('ai'), dckey=fkey('dc');
+  dealers().forEach(function(d){
+    ST.moIdxs.forEach(function(mi){
+      var mo=ST.MO[mi];
+      ai += (d[aikey] && d[aikey][mo]) || 0;
+      dc += (d[dckey] && d[dckey][mo]) || 0;
+    });
+  });
+  var contract = aggKPI().c;
+  var approved = (contract+dc)>0 ? contract/(contract+dc)*100 : 0;
+  return {ai:ai, dc:dc, approved:approved};
+}
+
+// Profile aggregation: scale total profile by (selected / total) ratio
+function aggDict(key){
+  var map={};
+  var mokey=fkey('mo'), fk=fkey(key);
+  dealers().forEach(function(d){
+    var tot=0, sel=0;
+    Object.keys(d[mokey]).forEach(function(mo){ tot+=d[mokey][mo][0]; });
+    ST.moIdxs.forEach(function(mi){ var v=d[mokey][ST.MO[mi]]; if(v)sel+=v[0]; });
+    var ratio = tot>0 ? sel/tot : 0;
+    var prof=d[fk]||{};
+    Object.keys(prof).forEach(function(k){
+      map[k]=(map[k]||0)+Math.round(prof[k]*ratio);
+    });
+  });
+  return Object.keys(map).map(function(k){return [k,map[k]];})
+    .filter(function(r){return r[1]>0;})
+    .sort(function(a,b){return b[1]-a[1];});
+}
+
+function aggArr(key){
+  var map={};
+  var mokey=fkey('mo'), fk=fkey(key);
+  dealers().forEach(function(d){
+    var tot=0, sel=0;
+    Object.keys(d[mokey]).forEach(function(mo){ tot+=d[mokey][mo][0]; });
+    ST.moIdxs.forEach(function(mi){ var v=d[mokey][ST.MO[mi]]; if(v)sel+=v[0]; });
+    var ratio = tot>0 ? sel/tot : 0;
+    (d[fk]||[]).forEach(function(pair){
+      map[pair[0]]=(map[pair[0]]||0)+Math.round(pair[1]*ratio);
+    });
+  });
+  return Object.keys(map).map(function(k){return [k,map[k]];})
+    .filter(function(r){return r[1]>0;})
+    .sort(function(a,b){return b[1]-a[1];});
+}
+
+/* ═══════════════ CHART.JS ═══════════════ */
+var G1="#1E3365",G2="#126C3D",G3="#9F1C33",G4="#3B5998",G5="#4FA876";
+var PALETTE=[G1,G2,G3,G4,G5,"#7E93BE","#8FC7A9","#C97A8B","#B7C5DD","#BFE0CD"];
+Chart.defaults.font.family="'Segoe UI','Noto Sans Thai',Arial,sans-serif";
+Chart.defaults.font.size=11;
+Chart.defaults.color="#6C757D";
+var DL=(typeof ChartDataLabels!=='undefined')?ChartDataLabels:null;
+if(DL)Chart.unregister(DL);
+/* Force y-axis label area wide enough for Thai text on ALL horizontal bar charts */
+Chart.register({
+  id:'yMinW',
+  afterFit:function(scale){
+    if(scale.axis==='y'&&scale.chart&&scale.chart.options.indexAxis==='y'){
+      var mn=(scale.chart.canvas&&scale.chart.canvas.id==='cJob')?215:200;
+      /* On narrow (mobile) charts never let the label gutter eat more than
+         45% of the chart width, otherwise bars become unreadable slivers. */
+      var cap=Math.floor((scale.chart.width||0)*0.45);
+      if(cap>0&&mn>cap)mn=cap;
+      if(scale.width<mn)scale.width=mn;
+    }
+  }
+});
+
+var CH={};
+function mkChart(id,cfg){
+  var el=document.getElementById(id); if(!el)return;
+  if(CH[id])CH[id].destroy();
+  CH[id]=new Chart(el,cfg); return CH[id];
+}
+
+function barRows(id,rows){
+  var el=document.getElementById(id); if(!el)return;
+  if(!rows||!rows.length){el.innerHTML='<div class="no-data">ไม่มีข้อมูล</div>';return;}
+  var mx=rows[0][1]||1;
+  el.innerHTML=rows.slice(0,12).map(function(r){
+    var pct=Math.min(100,Math.round(r[1]/mx*100));
+    return '<div class="bar-row"><div class="bar-lbl" title="'+r[0]+'">'+r[0]+'</div>'+
+      '<div class="bar-track"><div class="bar-fill" style="width:'+pct+'%"></div></div>'+
+      '<div class="bar-num">'+r[1].toLocaleString()+'</div></div>';
+  }).join('');
+}
+
+function buildTbl(id,rows){
+  var tbody=document.querySelector('#'+id+' tbody'); if(!tbody)return;
+  var tot=rows.reduce(function(s,r){return s+r[1];},0)||1;
+  tbody.innerHTML=rows.slice(0,25).map(function(r,i){
+    var b='<span class="badge'+(i<3?' top':'')+'">'+(i+1)+'</span>';
+    return '<tr><td>'+b+'</td><td>'+r[0]+'</td><td class="num">'+r[1].toLocaleString()+
+      '</td><td>'+((r[1]/tot)*100).toFixed(1)+'%</td></tr>';
+  }).join('');
+}
+
+function buildDealers(){
+  var tbody=document.querySelector('#tDlr tbody'); if(!tbody)return;
+  var rows=DB.map(function(d){
+    var c=0,f=0;
+    ST.moIdxs.forEach(function(mi){
+      var v=d.mo[ST.MO[mi]]; if(v){c+=v[0];f+=v[2];}
+    });
+    return [d.n,c,f];
+  }).filter(function(r){return r[1]>0;}).sort(function(a,b){return b[1]-a[1];}).slice(0,50);
+  var tot=rows.reduce(function(s,r){return s+r[1];},0)||1;
+  tbody.innerHTML=rows.map(function(r,i){
+    var b='<span class="badge'+(i<3?' top':'')+'">'+(i+1)+'</span>';
+    return '<tr><td>'+b+'</td><td>'+r[0]+'</td><td class="num">'+r[1].toLocaleString()+
+      '</td><td class="num">'+Math.round(r[2]/1000).toLocaleString()+
+      '</td><td>'+((r[1]/tot)*100).toFixed(1)+'%</td></tr>';
+  }).join('');
+}
+
+/* ═══════════════ INIT CHARTS ═══════════════ */
+function initCharts(){
+  function hbar(id){
+    var cfg={type:'bar',
+      data:{labels:[],datasets:[{data:[],backgroundColor:PALETTE,borderRadius:4,borderSkipped:false}]},
+      options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+        layout:{padding:{right:52}},
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){return ' '+c.parsed.x.toLocaleString()+' สัญญา';}}},
+          datalabels:{anchor:'end',align:'right',formatter:function(v){return v?v.toLocaleString():'';},
+            font:{size:10,weight:'700'},color:'#1E3365',padding:{left:4}}},
+        scales:{x:{grid:{color:'#f0f0f0'},ticks:{callback:function(v){return v.toLocaleString();}}},
+                y:{grid:{display:false},
+                  ticks:{font:{size:10.5},callback:function(val){
+                    var l=this.getLabelForValue(val);
+                    return l&&l.length>22?l.substring(0,22)+'…':l;
+                  }},
+                  afterFit:function(s){s.width=Math.max(s.width,200);}}}}};
+    if(DL)cfg.plugins=[DL];
+    return mkChart(id,cfg);
+  }
+  function donut(id,lbls,clrs){
+    var cfg={type:'doughnut',
+      data:{labels:lbls,datasets:[{data:new Array(lbls.length).fill(0),
+        backgroundColor:clrs||PALETTE,borderColor:'#fff',borderWidth:2}]},
+      options:{responsive:true,maintainAspectRatio:false,cutout:'54%',
+        plugins:{legend:{position:'bottom',labels:{font:{size:10},padding:6,boxWidth:10,boxHeight:10}},
+          tooltip:{callbacks:{label:function(c){return ' '+c.label+': '+c.parsed+'%';}}},
+          datalabels:{color:'#fff',font:{weight:'700',size:10},
+            formatter:function(v){return v>0?v+'%':'';}}}}};
+    if(DL)cfg.plugins=[DL];
+    return mkChart(id,cfg);
+  }
+
+  mkChart('cSales',{type:'line',
+    data:{labels:[],datasets:[{label:'สัญญา',data:[],
+      borderColor:G1,backgroundColor:'rgba(30,123,75,.1)',
+      borderWidth:2.5,tension:.4,fill:true,
+      pointBackgroundColor:G1,pointBorderColor:'#fff',pointBorderWidth:2,pointRadius:4,pointHoverRadius:7}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){return ' '+c.parsed.y.toLocaleString()+' สัญญา';}}}},
+      scales:{x:{grid:{color:'#f0f0f0'},ticks:{maxTicksLimit:18,font:{size:10}}},
+              y:{grid:{color:'#f0f0f0'},ticks:{callback:function(v){return v.toLocaleString();}}}}}});
+
+  donut('cGender',['Female','Male','Unknown'],[G1,G3,G5]);
+
+  (function(){var cfg={type:'doughnut',data:{labels:[],datasets:[{data:[],backgroundColor:PALETTE,borderColor:'#fff',borderWidth:2}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'54%',
+      plugins:{legend:{position:'bottom',labels:{font:{size:10},padding:6,boxWidth:10,boxHeight:10}},
+        tooltip:{callbacks:{label:function(c){return ' '+c.label+': '+c.parsed+'%';}}},
+        datalabels:{color:'#fff',font:{weight:'700',size:10},formatter:function(v){return v>0?v+'%':'';}}}}};
+  if(DL)cfg.plugins=[DL]; mkChart('cRate',cfg);})();
+
+  (function(){var cfg={type:'doughnut',data:{labels:[],datasets:[{data:[],backgroundColor:PALETTE,borderColor:'#fff',borderWidth:2}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'54%',
+      plugins:{legend:{position:'bottom',labels:{font:{size:10},padding:6,boxWidth:10,boxHeight:10}},
+        tooltip:{callbacks:{label:function(c){return ' '+c.label+' งวด: '+c.parsed+'%';}}},
+        datalabels:{color:'#fff',font:{weight:'700',size:10},formatter:function(v){return v>0?v+'%':'';}}}}};
+  if(DL)cfg.plugins=[DL]; mkChart('cTerm',cfg);})();
+
+  (function(){var cfg={type:'doughnut',data:{labels:[],datasets:[{data:[],backgroundColor:PALETTE,borderColor:'#fff',borderWidth:2}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'54%',
+      plugins:{legend:{position:'bottom',labels:{font:{size:9},padding:5,boxWidth:9,boxHeight:9}},
+        tooltip:{callbacks:{label:function(c){return ' '+c.label+': '+c.parsed+'%';}}},
+        datalabels:{color:'#fff',font:{weight:'700',size:10},formatter:function(v){return v>0?v+'%':'';}}}}};
+  if(DL)cfg.plugins=[DL]; mkChart('cTicket',cfg);})();
+
+  donut('cNcb',['Yes (Negative)','No','Yes (Normal)','Yes (Good)','Not check'],['#6B1424',G1,G3,G4,G5]);
+
+  (function(){var cfg={type:'bar',data:{labels:[],datasets:[{data:[],backgroundColor:G1,borderRadius:4,borderSkipped:false}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      layout:{padding:{right:56}},
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){return ' '+c.parsed.x.toLocaleString()+' คน';}}},
+        datalabels:{anchor:'end',align:'right',formatter:function(v){return v?v.toLocaleString():'';},
+          font:{size:10,weight:'700'},color:'#1E3365',padding:{left:4}}},
+      scales:{x:{grid:{color:'#f0f0f0'}},
+              y:{grid:{display:false},
+                ticks:{font:{size:10.5},callback:function(val){
+                  var l=this.getLabelForValue(val);
+                  return l&&l.length>20?l.substring(0,20)+'…':l;
+                }},
+                afterFit:function(s){s.width=Math.max(s.width,215);}}}}};
+  if(DL)cfg.plugins=[DL]; mkChart('cJob',cfg);})();
+
+  (function(){var cfg={type:'bar',data:{labels:[],datasets:[{data:[],backgroundColor:PALETTE,borderRadius:6,borderSkipped:false}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      layout:{padding:{top:22}},
+      plugins:{legend:{display:false},
+        datalabels:{anchor:'end',align:'top',formatter:function(v){return v?v.toLocaleString():'';},
+          font:{size:9,weight:'700'},color:'#1A1A1A',padding:{bottom:2}}},
+      scales:{x:{grid:{display:false}},y:{grid:{color:'#f0f0f0'},ticks:{callback:function(v){return v.toLocaleString();}}}}}};
+  if(DL)cfg.plugins=[DL]; mkChart('cCat',cfg);})();;
+
+  (function(){var cfg={type:'bar',data:{labels:[],datasets:[{data:[],backgroundColor:PALETTE,borderRadius:4,borderSkipped:false}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      layout:{padding:{right:52}},
+      plugins:{legend:{display:false},
+        datalabels:{anchor:'end',align:'right',formatter:function(v){return v?v.toLocaleString():'';},
+          font:{size:10,weight:'700'},color:'#1E3365',padding:{left:4}}},
+      scales:{x:{grid:{color:'#f0f0f0'}},y:{grid:{display:false},
+        afterFit:function(s){s.width=Math.max(s.width,80);}}}}};
+  if(DL)cfg.plugins=[DL]; mkChart('cAge2',cfg);})();
+}
+
+/* ═══════════════ FORMAT ═══════════════ */
+function fmtV(v){
+  if(v>=1e9)  return (v/1e9).toFixed(2)+' B';
+  if(v>=1e6)  return (v/1e6).toFixed(2)+' M';
+  if(v>=1000) return (v/1000).toFixed(1)+' K';
+  return v.toLocaleString();
+}
+function setCD(id,labels,data){
+  var c=CH[id]; if(!c)return;
+  c.data.labels=labels; c.data.datasets[0].data=data; c.update();
+}
+
+/* ═══════════════ UPDATE ═══════════════ */
+function updateAll(){
+  var kpi=aggKPI();
+  document.getElementById('kC').textContent=kpi.c.toLocaleString();
+  document.getElementById('kR').textContent=fmtV(kpi.r);
+  document.getElementById('kF').textContent=fmtV(kpi.f);
+  document.getElementById('kT').textContent=kpi.t>0?Math.round(kpi.t).toLocaleString()+' ฿':'—';
+
+  var appKpi=aggAppKPI();
+  document.getElementById('kAI').textContent=appKpi.ai.toLocaleString();
+  document.getElementById('kDC').textContent=appKpi.dc.toLocaleString();
+  document.getElementById('kAP').textContent=(appKpi.ai>0||appKpi.dc>0||kpi.c>0)?appKpi.approved.toFixed(1)+'%':'—';
+
+  var dlrName=ST.dlr===-1?'ทั้งหมด ('+DB.length.toLocaleString()+' ราย)':DB[ST.dlr].n;
+  var nMo=ST.moIdxs.length, total=ST.MO.length;
+  var perLabel=nMo===total?'ทั้งหมด ('+total+' เดือน)':
+               nMo===1?ST.MO[ST.moIdxs[0]]:
+               ST.MO[ST.moIdxs[0]]+'–'+ST.MO[ST.moIdxs[ST.moIdxs.length-1]];
+  document.getElementById('hdrDealer').innerHTML='<b>Dealer</b>'+dlrName;
+  document.getElementById('hdrPeriod').innerHTML='<b>Period</b>'+perLabel;
+
+  var yrLabel = ST.selYr==='all' ? 'ทั้งหมด' : '20'+ST.selYr;
+  var segLabel = ST.seg==='all' ? 'ทั้งหมด' : ST.seg;
+  var fs = document.getElementById('fsText');
+  if(fs) fs.innerHTML =
+    'ดีลเลอร์: <b>'+dlrName+'</b> &nbsp;|&nbsp; ปี: <b>'+yrLabel+'</b> &nbsp;|&nbsp; '+
+    'ช่วงเวลา: <b>'+perLabel+'</b> &nbsp;|&nbsp; สินค้า: <b>'+segLabel+'</b>';
+
+  // Sales trend
+  setCD('cSales',ST.MO,aggMonthly());
+
+  // Province
+  var pv=aggArr('pv'); barRows('bProvince',pv); barRows('bProvince2',pv);
+
+  // Showroom
+  var sw=aggArr('sw'); buildTbl('tShow',sw);
+  barRows('bShow10', sw.slice(0,10));
+
+  // Products
+  var md=aggArr('md'); buildTbl('tProd',md);
+  var brand=aggArr('brand'); barRows('bProd10', brand.slice(0,10));
+
+  // Gender
+  var gn=aggDict('gn'), gnMap={}, gnTot=0;
+  gn.forEach(function(r){gnMap[r[0]]=r[1]; gnTot+=r[1];});
+  var gnCh=CH['cGender']; if(gnCh){
+    gnCh.data.datasets[0].data=['Female','Male','Unknown'].map(function(k){
+      return gnTot>0?Math.round((gnMap[k]||0)/gnTot*100):0;});
+    gnCh.update();}
+
+  // Flat Rate
+  function dynDonut(id,rows){
+    var tot=rows.reduce(function(s,r){return s+r[1];},0);
+    var c=CH[id]; if(!c)return;
+    c.data.labels=rows.map(function(r){return r[0];});
+    c.data.datasets[0].data=rows.map(function(r){return tot>0?Math.round(r[1]/tot*100):0;});
+    c.data.datasets[0].backgroundColor=PALETTE.slice(0,rows.length);
+    c.update();
+  }
+  dynDonut('cRate',aggDict('fr'));
+  dynDonut('cTerm',aggDict('tm').sort(function(a,b){return parseInt(a[0])-parseInt(b[0]);}));
+
+  var tkOrder=['<10K','10-20K','20-30K','30-50K','50-100K','100K+'];
+  dynDonut('cTicket',aggDict('tk').sort(function(a,b){return tkOrder.indexOf(a[0])-tkOrder.indexOf(b[0]);}));
+
+  // NCB
+  var nc=aggDict('nc'), ncMap={}, ncTot=0;
+  nc.forEach(function(r){ncMap[r[0]]=r[1]; ncTot+=r[1];});
+  var ncCh=CH['cNcb']; if(ncCh){
+    ncCh.data.datasets[0].data=['Yes (Negative)','No','Yes (Normal)','Yes (Good)','Not check'].map(function(k){
+      return ncTot>0?Math.round((ncMap[k]||0)/ncTot*100):0;});
+    ncCh.update();}
+
+  // Age
+  var agOrd=['<25','25-29','30-34','35-39','40-44','45-49','50-54','55-59','60+'];
+  var agMap={};
+  aggDict('ag').forEach(function(r){agMap[r[0]]=r[1];});
+  var agVals=agOrd.map(function(k){return agMap[k]||0;});
+  barRows('bAge',agOrd.map(function(k,i){return [k,agVals[i]];}).filter(function(r){return r[1]>0;}));
+  setCD('cAge2',agOrd,agVals);
+
+  // Occupation
+  var oc=aggArr('oc');
+  setCD('cJob',oc.slice(0,12).map(function(r){return r[0];}),oc.slice(0,12).map(function(r){return r[1];}));
+  buildTbl('tJob',oc);
+
+  // Category
+  var ct=aggDict('ct').slice(0,10);
+  setCD('cCat',ct.map(function(r){return r[0];}),ct.map(function(r){return r[1];}));
+
+  buildDealers();
+}
+
+/* ═══════════════ TABS ═══════════════ */
+function switchTab(name,btn){
+  document.querySelectorAll('.tab-pane').forEach(function(p){p.classList.remove('on');});
+  document.querySelectorAll('.tab-btn').forEach(function(b){b.classList.remove('on');});
+  document.getElementById('tab-'+name).classList.add('on');
+  btn.classList.add('on');
+}
+
+/* ═══════════════ BOOT ═══════════════ */
+window.addEventListener('DOMContentLoaded',function(){
+  // Init base MO = full range (all dealers)
+  ST.baseMO = MO_ALL;
+  ST.dlrYears = YEARS;
+  renderYearChips();
+  renderPeriodChips();
+  initCharts();
+  // Default view: last complete month. MO_ALL already excludes the current
+  // (in-progress) month — the build script only includes fully-complete months —
+  // so the newest entry in MO_ALL IS last month. Always select it.
+  var lastIdx = ST.MO.length-1;
+  selectMonth(lastIdx);
+});
+</script>
+</body>
+</html>

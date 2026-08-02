@@ -952,8 +952,10 @@ window.addEventListener('DOMContentLoaded',function(){
   renderYearChips();
   renderPeriodChips();
   initCharts();
-  // Default view: last complete month (the newest month is usually still in progress).
-  var lastIdx = ST.MO.length>=2 ? ST.MO.length-2 : ST.MO.length-1;
+  // Default view: last complete month. MO_ALL already excludes the current
+  // (in-progress) month — the build script only includes fully-complete months —
+  // so the newest entry in MO_ALL IS last month. Always select it.
+  var lastIdx = ST.MO.length-1;
   selectMonth(lastIdx);
 });
 </script>
