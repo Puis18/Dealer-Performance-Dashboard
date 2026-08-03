@@ -671,7 +671,7 @@ Chart.register({
   id:'yMinW',
   afterFit:function(scale){
     if(scale.axis==='y'&&scale.chart&&scale.chart.options.indexAxis==='y'){
-      var mn=(scale.chart.canvas&&scale.chart.canvas.id==='cJob')?215:200;
+      var mn=(scale.chart.canvas&&scale.chart.canvas.id==='cJob')?260:200;
       /* On narrow (mobile) charts never let the label gutter eat more than
          45% of the chart width, otherwise bars become unreadable slivers. */
       var cap=Math.floor((scale.chart.width||0)*0.45);
@@ -806,9 +806,9 @@ function initCharts(){
               y:{grid:{display:false},
                 ticks:{font:{size:10.5},callback:function(val){
                   var l=this.getLabelForValue(val);
-                  return l&&l.length>20?l.substring(0,20)+'…':l;
+                  return l&&l.length>34?l.substring(0,34)+'…':l;
                 }},
-                afterFit:function(s){s.width=Math.max(s.width,215);}}}}};
+                afterFit:function(s){s.width=Math.max(s.width,260);}}}}};
   if(DL)cfg.plugins=[DL]; mkChart('cJob',cfg);})();
 
   (function(){var cfg={type:'bar',data:{labels:[],datasets:[{data:[],backgroundColor:PALETTE,borderRadius:6,borderSkipped:false}]},
