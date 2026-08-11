@@ -104,7 +104,7 @@ NEED = {
     "E": "con_date", "H": "status",
     "AP": "dlr", "AS": "sw", "AW": "brand", "AZ": "md",
     "BG": "cd", "BJ": "car", "BP": "fin", "BV": "tm",
-    "CA": "flat", "CD": "nc", "CF": "age", "CK": "pv",
+    "BZ": "irate", "CA": "flat", "CD": "nc", "CF": "age", "CK": "pv",
     "CS": "oc", "DX": "subpt", "EB": "ct",
 }
 
@@ -119,16 +119,24 @@ def log(msg):
 
 
 # ── bucket helpers ─────────────────────────────────────────────────────────
-def bucket_flat(x):
-    if x < 0.5:
-        return "<0.5%"
-    if x < 0.75:
-        return "0.5–0.74%"
-    if x < 1.0:
-        return "0.75–0.99%"
-    if x < 1.5:
-        return "1.0–1.49%"
-    return "≥1.5%"          # overflow guard — never silently drop a contract
+def rate_label(raw):
+    """interest_rate (col BZ) -> exact '5.00%' style label.
+
+    Changed 2026-08 (per Puis): the 'fr' dimension used to bucket flat_rate
+    (col CA) into ranges (<0.5%, 0.5–0.74%, ...). Puis wants the exact rate
+    values instead, matching how the portfolio-analysis report groups them
+    (3.00% / 5.00% / 7.00% / 1.25% / 0.99% ...). interest_rate is the right
+    column for that: it holds the actual quoted rate, and flat_rate is the
+    same figure spread over the term (flat = irate * 12), which is why the
+    old range buckets never lined up with the report's numbers.
+    99.8% of contracts sit on just four values (5, 3, 7, 10); the rest is a
+    long tail of ~124 bespoke rates, so the dashboard caps the donut at the
+    top slices and lumps the remainder into 'อื่นๆ' at render time.
+    """
+    try:
+        return "%.2f%%" % float(raw)
+    except (TypeError, ValueError):
+        return None
 
 
 def bucket_ticket(v):
@@ -469,10 +477,7 @@ def build(z, ss, cutoff):
             vals["gn"] = None
 
         vals["tk"] = bucket_ticket(fin)
-        try:
-            vals["fr"] = bucket_flat(num("flat") / 100.0)
-        except Exception:
-            vals["fr"] = None
+        vals["fr"] = rate_label(rec.get("irate"))
         try:
             vals["ag"] = bucket_age(int(num("age")))
         except Exception:

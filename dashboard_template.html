@@ -316,7 +316,7 @@ footer span{color:var(--g2);font-weight:600}
 <div id="tab-pr" class="tab-pane"><div class="page">
   <div class="g4cols" style="grid-template-columns:repeat(4,1fr)">
     <div class="card"><h3>By Gender</h3><div class="cw" style="height:170px"><canvas id="cGender"></canvas></div></div>
-    <div class="card"><h3>By Flat Rate</h3><div class="cw" style="height:170px"><canvas id="cRate"></canvas></div></div>
+    <div class="card"><h3>By Interest Rate (อัตราดอกเบี้ย)</h3><div class="cw" style="height:170px"><canvas id="cRate"></canvas></div></div>
     <div class="card"><h3>By Term (งวด)</h3><div class="cw" style="height:170px"><canvas id="cTerm"></canvas></div></div>
     <div class="card"><h3>Ticket Size (ยอดจัดสินเชื่อ)</h3><div class="cw" style="height:170px"><canvas id="cTicket"></canvas></div></div>
   </div>
@@ -902,7 +902,20 @@ function updateAll(){
     c.data.datasets[0].backgroundColor=PALETTE.slice(0,rows.length);
     c.update();
   }
-  dynDonut('cRate',aggDict('fr'));
+  // Interest rate: exact values (3.00% / 5.00% / ...). 99.8% of contracts sit
+  // on a handful of rates but there's a long tail of ~124 bespoke ones, so keep
+  // the biggest RATE_TOP slices (sorted by rate, not by count, so the legend
+  // reads in a sensible order) and roll the remainder into 'อื่นๆ'.
+  var RATE_TOP=7;
+  (function(){
+    var rows=aggDict('fr').filter(function(r){return r[1]>0;});
+    rows.sort(function(a,b){return b[1]-a[1];});
+    var head=rows.slice(0,RATE_TOP), rest=rows.slice(RATE_TOP);
+    head.sort(function(a,b){return parseFloat(a[0])-parseFloat(b[0]);});
+    var other=rest.reduce(function(s,r){return s+r[1];},0);
+    if(other>0)head.push(['อื่นๆ',other]);
+    dynDonut('cRate',head);
+  })();
   dynDonut('cTerm',aggDict('tm').sort(function(a,b){return parseInt(a[0])-parseInt(b[0]);}));
 
   var tkOrder=['<10K','10-20K','20-30K','30-50K','50-100K','100K+'];
