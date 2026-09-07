@@ -1,16 +1,16 @@
 {
  "fingerprint": {
-  "mtime": 1785663618,
-  "size": 165811734,
+  "mtime": 1788759660,
+  "size": 188670423,
   "to": "20270101",
   "from": "20220901"
  },
  "totals": {
-  "contracts": 146906,
-  "dealers": 2695,
-  "retail": 3270811458,
-  "finance": 2473078869,
-  "last_month": "Jul'26"
+  "contracts": 160960,
+  "dealers": 2782,
+  "retail": 3664992903,
+  "finance": 2779151177,
+  "last_month": "Aug'26"
  },
- "built": "2026-08-11"
+ "built": "2026-09-07"
 }

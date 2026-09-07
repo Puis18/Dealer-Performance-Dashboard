@@ -103,12 +103,23 @@ NEED = {
     "A": "appno", "B": "app_date", "C": "conno", "D": "cust",
     "E": "con_date", "H": "status",
     "AP": "dlr", "AS": "sw", "AW": "brand", "AZ": "md",
-    "BG": "cd", "BJ": "car", "BP": "fin", "BV": "tm",
+    "BG": "cd", "BJ": "car", "BL": "vat_amt", "BP": "fin", "BV": "tm",
     "BZ": "irate", "CA": "flat", "CD": "nc", "CF": "age", "CK": "pv",
     "CS": "oc", "DX": "subpt", "EB": "ct",
 }
 
-DICT_FIELDS = ["ct", "nc", "tk", "gn", "ag", "cd", "tm", "fr"]
+# VAT classification (added 2026-09, per Puis): col BL (car_amt_vat) is a
+# per-contract field, but in practice it's almost always dealer-consistent —
+# checked against the live workbook: of 2,787 dealers with Contract rows,
+# 1,505 are 100% VAT, 1,248 are 100% No VAT, and only 34 mix both. (Col BU
+# (finance_amt_vat) was tried first per Puis's initial guess, but among
+# actual 'Contract' status rows only 6/161,341 were ever zero there — it
+# turned out to be ~0 only on Decline/Cancel or not-yet-approved rows, so it
+# couldn't produce a meaningful No-VAT group. BL is the correct column.)
+# A nonzero BL value on a contract means that contract is VAT, zero means
+# No VAT. Kept at contract granularity (not forced to one label per dealer)
+# per Puis's call ("Filter ที่ระดับสัญญา").
+DICT_FIELDS = ["ct", "nc", "tk", "gn", "ag", "cd", "tm", "fr", "vat"]
 LIST_FIELDS = ["sw", "md", "pv", "oc"]
 SEGS = ("", "MO", "EA")
 
@@ -478,6 +489,7 @@ def build(z, ss, cutoff):
 
         vals["tk"] = bucket_ticket(fin)
         vals["fr"] = rate_label(rec.get("irate"))
+        vals["vat"] = "VAT" if num("vat_amt") != 0 else "No VAT"
         try:
             vals["ag"] = bucket_age(int(num("age")))
         except Exception:

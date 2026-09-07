@@ -326,6 +326,9 @@ footer span{color:var(--g2);font-weight:600}
     <div class="card"><h3>By Province (Top 10)</h3><div id="bProvince2" style="padding-top:6px"></div></div>
   </div>
   <div class="g2cols" style="margin-top:12px">
+    <div class="card"><h3>By VAT Status (สัญญา VAT / No VAT)</h3><div class="cw" style="height:170px"><canvas id="cVat"></canvas></div></div>
+  </div>
+  <div class="g2cols" style="margin-top:12px">
     <div class="card"><h3>By Occupation (อาชีพ)</h3><div class="cw" style="height:360px"><canvas id="cJob"></canvas></div></div>
     <div style="display:flex;flex-direction:column;gap:12px">
       <div class="card"><h3>By Category (หมวดหมู่)</h3><div class="cw" style="height:170px"><canvas id="cCat"></canvas></div></div>
@@ -796,6 +799,8 @@ function initCharts(){
 
   donut('cNcb',['Yes (Negative)','No','Yes (Normal)','Yes (Good)','Not check'],['#6B1424',G1,G3,G4,G5]);
 
+  donut('cVat',['VAT','No VAT'],[G1,G5]);
+
   (function(){var cfg={type:'bar',data:{labels:[],datasets:[{data:[],backgroundColor:G1,borderRadius:4,borderSkipped:false}]},
     options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
       layout:{padding:{right:56}},
@@ -892,6 +897,14 @@ function updateAll(){
     gnCh.data.datasets[0].data=['Female','Male','Unknown'].map(function(k){
       return gnTot>0?Math.round((gnMap[k]||0)/gnTot*100):0;});
     gnCh.update();}
+
+  // VAT status (per-contract: nonzero finance_amt_vat = VAT, zero = No VAT)
+  var vat=aggDict('vat'), vatMap={}, vatTot=0;
+  vat.forEach(function(r){vatMap[r[0]]=r[1]; vatTot+=r[1];});
+  var vatCh=CH['cVat']; if(vatCh){
+    vatCh.data.datasets[0].data=['VAT','No VAT'].map(function(k){
+      return vatTot>0?Math.round((vatMap[k]||0)/vatTot*100):0;});
+    vatCh.update();}
 
   // Flat Rate
   function dynDonut(id,rows){
