@@ -661,6 +661,26 @@ function aggArr(key){
     .sort(function(a,b){return b[1]-a[1];});
 }
 
+// Product mix (md/brand/ct) is stored per-month as {month:[[value,count],...]},
+// so — unlike aggArr/aggDict, which scale a whole-period total — we sum only the
+// actually-selected months. This makes the latest month show the real products
+// sold that month (new models, whole new brands) instead of a scaled slice of
+// the all-time mix. Segment- and period-aware via fkey()/ST.moIdxs.
+function aggProd(key){
+  var map={};
+  var fk=fkey(key);
+  dealers().forEach(function(d){
+    var byMo=d[fk]||{};
+    ST.moIdxs.forEach(function(mi){
+      var arr=byMo[ST.MO[mi]]; if(!arr)return;
+      arr.forEach(function(pair){ map[pair[0]]=(map[pair[0]]||0)+pair[1]; });
+    });
+  });
+  return Object.keys(map).map(function(k){return [k,map[k]];})
+    .filter(function(r){return r[1]>0;})
+    .sort(function(a,b){return b[1]-a[1];});
+}
+
 /* ═══════════════ CHART.JS ═══════════════ */
 var G1="#1E3365",G2="#126C3D",G3="#9F1C33",G4="#3B5998",G5="#4FA876";
 var PALETTE=[G1,G2,G3,G4,G5,"#7E93BE","#8FC7A9","#C97A8B","#B7C5DD","#BFE0CD"];
@@ -887,8 +907,8 @@ function updateAll(){
   barRows('bShow10', sw.slice(0,10));
 
   // Products
-  var md=aggArr('md'); buildTbl('tProd',md);
-  var brand=aggArr('brand'); barRows('bProd10', brand.slice(0,10));
+  var md=aggProd('md'); buildTbl('tProd',md);
+  var brand=aggProd('brand'); barRows('bProd10', brand.slice(0,10));
 
   // Gender
   var gn=aggDict('gn'), gnMap={}, gnTot=0;
@@ -956,7 +976,7 @@ function updateAll(){
   buildTbl('tJob',oc);
 
   // Category
-  var ct=aggDict('ct').slice(0,10);
+  var ct=aggProd('ct').slice(0,10);
   setCD('cCat',ct.map(function(r){return r[0];}),ct.map(function(r){return r[1];}));
 
   buildDealers();

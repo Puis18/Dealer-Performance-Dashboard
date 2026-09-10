@@ -119,8 +119,20 @@ NEED = {
 # A nonzero BL value on a contract means that contract is VAT, zero means
 # No VAT. Kept at contract granularity (not forced to one label per dealer)
 # per Puis's call ("Filter ที่ระดับสัญญา").
-DICT_FIELDS = ["ct", "nc", "tk", "gn", "ag", "cd", "tm", "fr", "vat"]
-LIST_FIELDS = ["sw", "md", "pv", "oc"]
+# Product-mix fields are stored PER MONTH (added 2026-09, per Puis): unlike
+# demographic fields (gender/age/occupation/province...) which are stable over
+# time and can be scaled from a whole-period total, the product mix shifts hard
+# month to month (an old top-seller like iPhone 13 disappears; new models and
+# whole new brands appear). The old code kept only a whole-period total for
+# these and scaled it by the month's contract ratio at render time, which made
+# a phased-out model still show as a "top seller" in the latest month and hid
+# products that only sold recently (e.g. TK Telecom sold Android/Xiaomi in
+# Aug'26 but the report showed only Apple). So md/brand/ct are now keyed by
+# contract month and summed over the selected months in the dashboard — exactly
+# like the contract counts (mo) already are.
+MONTHLY_PROD = ["md", "brand", "ct"]
+DICT_FIELDS = ["nc", "tk", "gn", "ag", "cd", "tm", "fr", "vat"]
+LIST_FIELDS = ["sw", "pv", "oc"]
 SEGS = ("", "MO", "EA")
 
 
@@ -268,9 +280,43 @@ def new_dealer():
     d["mo"] = {s: defaultdict(lambda: [0, 0.0, 0.0]) for s in SEGS}
     d["ai"] = {s: defaultdict(int) for s in SEGS}
     d["dc"] = {s: defaultdict(int) for s in SEGS}
-    for f in DICT_FIELDS + LIST_FIELDS + ["brand"]:
+    for f in DICT_FIELDS + LIST_FIELDS:
         d[f] = {s: defaultdict(int) for s in SEGS}
+    # product fields: seg -> month -> value -> count
+    for f in MONTHLY_PROD:
+        d[f] = {s: defaultdict(lambda: defaultdict(int)) for s in SEGS}
     return d
+
+
+def build_model_display_map(rows):
+    """Merge whitespace-only model-name variants (added 2026-09, per Puis).
+
+    The source data changed model_name spelling mid-2026: the same phone that
+    used to be written 'APPLE iPhone 15 128 GB' started arriving as
+    'APPLE iPhone15 128GB', so the Best-Selling Models table split one product
+    across two rows. Canonical key = the name with all whitespace removed,
+    upper-cased (two strings that differ only by spacing collapse to the same
+    key; genuinely different models never do). For display we keep the most
+    common original spelling for each key (ties broken by the longer, i.e.
+    spaced, form which reads better). Returns {raw_model: canonical_display}.
+    """
+    from collections import Counter
+    by_key = defaultdict(Counter)
+    for rec in rows:
+        if rec.get("status") != "Contract":
+            continue
+        md = rec.get("md")
+        if not md:
+            continue
+        key = re.sub(r"\s+", "", md).upper()
+        by_key[key][md] += 1
+    out = {}
+    for key, counter in by_key.items():
+        # most frequent spelling wins; tie -> longer (usually the spaced form)
+        best = max(counter.items(), key=lambda kv: (kv[1], len(kv[0])))[0]
+        for raw in counter:
+            out[raw] = best
+    return out
 
 
 def compute_dedupe_exclusions(rows):
@@ -425,6 +471,7 @@ def build(z, ss, cutoff):
     stats["decline_dedupe_excluded_rows"] = len(decline_excluded)
     stats["reissue_dedupe_excluded_rows"] = len(reissue_excluded)
     stats["dedupe_excluded_rows"] = len(dedupe_excluded)
+    model_display = build_model_display_map(rows)
 
     for rec in rows:
         status = rec.get("status")
@@ -473,8 +520,10 @@ def build(z, ss, cutoff):
             row[2] += fin
 
         # ---- profile dimensions ----
+        md_raw = rec.get("md")
         vals = {
-            "sw": rec.get("sw"), "md": rec.get("md"), "pv": rec.get("pv"),
+            "sw": rec.get("sw"), "md": model_display.get(md_raw, md_raw),
+            "pv": rec.get("pv"),
             "oc": rec.get("oc"), "brand": rec.get("brand"),
             "ct": rec.get("ct"), "nc": rec.get("nc"), "cd": rec.get("cd"),
         }
@@ -503,8 +552,13 @@ def build(z, ss, cutoff):
         for field, v in vals.items():
             if not v:
                 continue
-            for s in ("", seg):
-                d[field][s][v] += 1
+            if field in MONTHLY_PROD:
+                # product mix: bucket by contract month (see MONTHLY_PROD note)
+                for s in ("", seg):
+                    d[field][s][cmk][v] += 1
+            else:
+                for s in ("", seg):
+                    d[field][s][v] += 1
 
     return D, stats, subtypes, unknown_prefix
 
@@ -542,11 +596,19 @@ def to_db(D):
         for base in DICT_FIELDS:
             for s in SEGS:
                 rec[mname(base, s)] = dict(d[base][s])
-        # brand comes last, and in MO/EA/all order
-        cap = CAPS["brand"]
-        for s in ("MO", "EA", ""):
-            items = sorted(d["brand"][s].items(), key=lambda kv: -kv[1])[:cap]
-            rec["brand" + s] = [[k, v] for k, v in items]
+        # product fields (md/brand/ct): {month: [[value, count], ...]} per seg,
+        # so the dashboard can sum only the selected months (see MONTHLY_PROD).
+        for base in MONTHLY_PROD:
+            cap = CAPS.get(base)
+            for s in SEGS:
+                by_month = {}
+                for mk, vals in sorted(d[base][s].items(),
+                                       key=lambda kv: mo_sort(kv[0])):
+                    items = sorted(vals.items(), key=lambda kv: -kv[1])
+                    if cap:
+                        items = items[:cap]
+                    by_month[mk] = [[k, v] for k, v in items]
+                rec[mname(base, s)] = by_month
         out.append(rec)
     out.sort(key=lambda r: -r["tot"])
     return out
