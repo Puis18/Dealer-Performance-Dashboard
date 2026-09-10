@@ -95,8 +95,14 @@ MO_CT = {"โทรศัพท์มือถือ"}
 MALE_PREFIX = {"นาย"}
 FEMALE_PREFIX = {"นาง", "นางสาว"}
 
-# list caps observed in the original dashboard
-CAPS = {"sw": None, "md": 15, "pv": 15, "oc": 12, "brand": 40}
+# List caps. Originally these mirrored the old dashboard's display limits, but
+# a storage cap silently drops the long tail, so the numbers stop reconciling:
+# with md capped at 15, เชียงใหม่สยามทีวี Aug'26 showed models summing to 41 of
+# its 66 contracts, and MO(31) + EA(18, capped) = 49 != all(41). Caps are now
+# only a display concern (barRows slices 12, buildTbl slices 25), so nothing is
+# capped at build time — the cost is small (uncapping md adds ~0.6MB) and every
+# segment/period total ties out exactly.
+CAPS = {"sw": None, "md": None, "pv": None, "oc": None, "brand": None}
 
 # columns we actually read (letter -> short name)
 NEED = {

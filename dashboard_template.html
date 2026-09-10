@@ -625,6 +625,34 @@ function aggAppKPI(){
   return {ai:ai, dc:dc, approved:approved};
 }
 
+// Largest-remainder ("Hamilton") rounding. The demographic profiles below are
+// whole-period totals scaled by the selected period's ratio, which yields
+// fractions. Rounding each value independently made the parts stop adding up:
+// เชียงใหม่สยามทีวี Aug'26 showed occupation all=64 but MO(29)+EA(33)=62. Here
+// we keep the fractions while summing, then round once at the end, handing the
+// leftover units to the largest remainders — so the displayed values always sum
+// to the true scaled total and ทั้งหมด = MO + EA exactly.
+function lrRound(map){
+  var keys=Object.keys(map), out={}, floorSum=0, rem=[], target=0;
+  keys.forEach(function(k){ target+=map[k]; });
+  target=Math.round(target);
+  keys.forEach(function(k){
+    var f=Math.floor(map[k]);
+    out[k]=f; floorSum+=f; rem.push([k,map[k]-f]);
+  });
+  var need=target-floorSum;
+  rem.sort(function(a,b){return b[1]-a[1];});
+  for(var i=0;i<rem.length&&need>0;i++,need--) out[rem[i][0]]++;
+  return out;
+}
+
+function finishAgg(map){
+  var r=lrRound(map);
+  return Object.keys(r).map(function(k){return [k,r[k]];})
+    .filter(function(x){return x[1]>0;})
+    .sort(function(a,b){return b[1]-a[1];});
+}
+
 // Profile aggregation: scale total profile by (selected / total) ratio
 function aggDict(key){
   var map={};
@@ -636,12 +664,10 @@ function aggDict(key){
     var ratio = tot>0 ? sel/tot : 0;
     var prof=d[fk]||{};
     Object.keys(prof).forEach(function(k){
-      map[k]=(map[k]||0)+Math.round(prof[k]*ratio);
+      map[k]=(map[k]||0)+prof[k]*ratio;      // keep the fraction; round at the end
     });
   });
-  return Object.keys(map).map(function(k){return [k,map[k]];})
-    .filter(function(r){return r[1]>0;})
-    .sort(function(a,b){return b[1]-a[1];});
+  return finishAgg(map);
 }
 
 function aggArr(key){
@@ -653,12 +679,10 @@ function aggArr(key){
     ST.moIdxs.forEach(function(mi){ var v=d[mokey][ST.MO[mi]]; if(v)sel+=v[0]; });
     var ratio = tot>0 ? sel/tot : 0;
     (d[fk]||[]).forEach(function(pair){
-      map[pair[0]]=(map[pair[0]]||0)+Math.round(pair[1]*ratio);
+      map[pair[0]]=(map[pair[0]]||0)+pair[1]*ratio;   // fraction; rounded at end
     });
   });
-  return Object.keys(map).map(function(k){return [k,map[k]];})
-    .filter(function(r){return r[1]>0;})
-    .sort(function(a,b){return b[1]-a[1];});
+  return finishAgg(map);
 }
 
 // Product mix (md/brand/ct) is stored per-month as {month:[[value,count],...]},
